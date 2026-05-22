@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      color: #333;
+      padding: 16px;
+      background: #fff;
+    }
+
+    p {
+      color: #666;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px 16px;
+      background: #18a0fb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover:not(:disabled) { background: #0d8de0; }
+    button:disabled { background: #bbb; cursor: not-allowed; }
+
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #777;
+      min-height: 16px;
+    }
+
+    #status.error   { color: #c0392b; }
+    #status.success { color: #27ae60; }
+  </style>
+</head>
+<body>
+  <p>Exports selected frames (or all frames on the page) as PNG at 2× scale.</p>
+  <button id="exportBtn">Export to Desktop</button>
+  <div id="status"></div>
+
+  <script>
+    const btn    = document.getElementById('exportBtn');
+    const status = document.getElementById('status');
+    let dirHandle = null;
+
+    function setStatus(msg, cls) {
+      status.textContent = msg;
+      status.className = cls || '';
+    }
+
+    btn.addEventListener('click', async () => {
+      if (!window.showDirectoryPicker) {
+        setStatus('Requires the Figma desktop app (File System Access API).', 'error');
+        return;
+      }
+
+      try {
+        // Must be called synchronously within the user-gesture handler.
+        dirHandle = await window.showDirectoryPicker({ startIn: 'desktop', mode: 'readwrite' });
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        setStatus('Could not open folder picker: ' + e.message, 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      setStatus('Exporting…');
+      parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
+    });
+
+    window.addEventListener('message', async (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'empty') {
+        setStatus('No frames found on this page.', 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      if (msg.type === 'error') {
+        setStatus('Error: ' + msg.message, 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      if (msg.type === 'done') {
+        if (!dirHandle) {
+          setStatus('No folder selected.', 'error');
+          btn.disabled = false;
+          return;
+        }
+
+        let written = 0;
+        const errors = [];
+
+        for (const item of msg.exports) {
+          // Sanitise the frame name so it is a valid file name.
+          const safeName = item.name
+            .replace(/[\/\\?%*:|"<>]/g, '-')
+            .replace(/\s+/g, ' ')
+            .trim() || 'frame';
+          const fileName = safeName + '.png';
+
+          try {
+            const fh = await dirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fh.createWritable();
+            await writable.write(new Uint8Array(item.bytes));
+            await writable.close();
+            written++;
+          } catch (e) {
+            errors.push(fileName + ': ' + e.message);
+          }
+        }
+
+        dirHandle = null;
+
+        if (errors.length === 0) {
+          setStatus('Done! Exported ' + written + ' file' + (written !== 1 ? 's' : '') + '.', 'success');
+        } else {
+          setStatus(
+            'Exported ' + written + ', failed ' + errors.length + '. First error: ' + errors[0],
+            'error'
+          );
+        }
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

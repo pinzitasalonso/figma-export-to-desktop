@@ -1,0 +1,13 @@
+{
+  "name": "figma-export-to-desktop",
+  "version": "1.0.0",
+  "description": "Figma plugin — export frames as PNG directly to a folder on your Desktop",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "*",
+    "typescript": "^5.0.0"
+  }
+}
