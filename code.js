@@ -8,8 +8,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-figma.showUI(__html__, { width: 320, height: 148, title: "Export to Desktop" });
+const WIDTH = 320;
+figma.showUI(__html__, { width: WIDTH, height: 360, title: "Export to Desktop" });
 figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
+    if (msg.type === "resize") {
+        figma.ui.resize(WIDTH, Math.max(120, Math.min(720, Math.ceil(msg.height))));
+        return;
+    }
     if (msg.type === "export") {
         const frames = getFramesToExport();
         if (frames.length === 0) {

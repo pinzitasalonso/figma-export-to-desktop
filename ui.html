@@ -108,6 +108,17 @@
     function setMsg(t, cls) { msg.textContent = t || ''; msg.className = cls || ''; }
     function setCounter(t) { counter.textContent = t || ''; }
 
+    // Grow/shrink the plugin window to fit the content (incl. the "how to" block).
+    function syncHeight() {
+      const h = document.documentElement.scrollHeight;
+      parent.postMessage({ pluginMessage: { type: 'resize', height: h } }, '*');
+    }
+    if (window.ResizeObserver) {
+      new ResizeObserver(syncHeight).observe(document.body);
+    } else {
+      window.addEventListener('load', syncHeight);
+    }
+
     // ── Connection detection ───────────────────────────────────────────────
     async function checkHealth() {
       bar.textContent = 'Checking for helper…';
