@@ -54,28 +54,25 @@
   <script>
     const btn    = document.getElementById('exportBtn');
     const status = document.getElementById('status');
-    let dirHandle = null;
 
     function setStatus(msg, cls) {
       status.textContent = msg;
       status.className = cls || '';
     }
 
-    btn.addEventListener('click', async () => {
-      if (!window.showDirectoryPicker) {
-        setStatus('Requires the Figma desktop app (File System Access API).', 'error');
-        return;
-      }
+    function downloadFile(bytes, filename) {
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
 
-      try {
-        // Must be called synchronously within the user-gesture handler.
-        dirHandle = await window.showDirectoryPicker({ startIn: 'desktop', mode: 'readwrite' });
-      } catch (e) {
-        if (e.name === 'AbortError') return;
-        setStatus('Could not open folder picker: ' + e.message, 'error');
-        return;
-      }
-
+    btn.addEventListener('click', () => {
       btn.disabled = true;
       setStatus('Exporting…');
       parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
@@ -98,44 +95,28 @@
       }
 
       if (msg.type === 'done') {
-        if (!dirHandle) {
-          setStatus('No folder selected.', 'error');
-          btn.disabled = false;
-          return;
-        }
+        let count = 0;
 
-        let written = 0;
-        const errors = [];
-
-        for (const item of msg.exports) {
-          // Sanitise the frame name so it is a valid file name.
+        for (let i = 0; i < msg.exports.length; i++) {
+          const item     = msg.exports[i];
           const safeName = item.name
             .replace(/[\/\\?%*:|"<>]/g, '-')
             .replace(/\s+/g, ' ')
             .trim() || 'frame';
-          const fileName = safeName + '.png';
 
-          try {
-            const fh = await dirHandle.getFileHandle(fileName, { create: true });
-            const writable = await fh.createWritable();
-            await writable.write(new Uint8Array(item.bytes));
-            await writable.close();
-            written++;
-          } catch (e) {
-            errors.push(fileName + ': ' + e.message);
+          downloadFile(item.bytes, safeName + '.png');
+          count++;
+
+          // Small stagger so the browser doesn't coalesce/drop concurrent downloads.
+          if (i < msg.exports.length - 1) {
+            await new Promise(r => setTimeout(r, 150));
           }
         }
 
-        dirHandle = null;
-
-        if (errors.length === 0) {
-          setStatus('Done! Exported ' + written + ' file' + (written !== 1 ? 's' : '') + '.', 'success');
-        } else {
-          setStatus(
-            'Exported ' + written + ', failed ' + errors.length + '. First error: ' + errors[0],
-            'error'
-          );
-        }
+        setStatus(
+          'Done! ' + count + ' file' + (count !== 1 ? 's' : '') + ' saved to your Downloads folder.',
+          'success'
+        );
         btn.disabled = false;
       }
     });
