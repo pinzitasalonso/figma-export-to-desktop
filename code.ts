@@ -1,6 +1,6 @@
 const WIDTH = 320;
 
-figma.showUI(__html__, { width: WIDTH, height: 360, title: "Export to Desktop" });
+figma.showUI(__html__, { width: WIDTH, height: 360, title: "Desktop Exporter" });
 
 type ExportRequest = { type: "export" };
 type CloseRequest = { type: "close" };

@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 const WIDTH = 320;
-figma.showUI(__html__, { width: WIDTH, height: 360, title: "Export to Desktop" });
+figma.showUI(__html__, { width: WIDTH, height: 360, title: "Desktop Exporter" });
 figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
     if (msg.type === "resize") {
         figma.ui.resize(WIDTH, Math.max(120, Math.min(720, Math.ceil(msg.height))));

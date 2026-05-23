@@ -50,7 +50,7 @@ The helper needs **only Node 16+** — it has zero npm dependencies (Node built-
 ### 4. Export
 
 1. *(Optional)* Select frames. If nothing is selected, all top-level frames on the page are exported.
-2. Run **Plugins → Development → Export to Desktop**.
+2. Run **Plugins → Development → Desktop Exporter**.
 3. The banner shows the mode:
    - **Helper connected** → click **Export to Desktop**; files appear on your Desktop instantly.
    - **Helper not running** → click **How to start the helper**, follow it, then **Retry connection**; or click **Export via downloads** and save each file (the first save asks where — pick Desktop, macOS reuses it for the rest).

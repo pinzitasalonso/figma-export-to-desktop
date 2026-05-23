@@ -1,5 +1,5 @@
 {
-  "name": "Export to Desktop",
+  "name": "Desktop Exporter",
   "id": "figma-export-to-desktop",
   "api": "1.0.0",
   "main": "code.js",
