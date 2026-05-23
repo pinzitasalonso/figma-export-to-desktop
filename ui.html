@@ -90,6 +90,7 @@
     }
     button:active:not(:disabled) { transform: translateY(1px); }
     button:disabled { background: #d6d6de !important; color: #fff !important; cursor: not-allowed; box-shadow: none !important; }
+    button:focus-visible { outline: 2px solid rgba(24, 160, 251, 0.55); outline-offset: 2px; }
 
     .primary {
       color: #fff;
@@ -232,6 +233,7 @@
         startBtn.style.display = 'block';
         retryBtn.style.display = 'block';
       }
+      mainBtn.focus();
     }
 
     // ── Server export (zero dialogs) ───────────────────────────────────────
@@ -259,6 +261,7 @@
       }
       setMsg('✓ Saved ' + queue.length + ' file' + (queue.length !== 1 ? 's' : '') + ' to your Desktop.', 'success');
       mainBtn.disabled = false;
+      mainBtn.focus();
     }
 
     // ── Download fallback (one click per file) ─────────────────────────────
@@ -282,6 +285,7 @@
         mainBtn.textContent = '↓  Save  ' + f.name + '.png';
         setCounter((state.idx + 1) + ' of ' + state.queue.length);
         mainBtn.disabled = false;
+        mainBtn.focus();
       } else {
         state.mode = 'idle';
         state.queue = [];
@@ -316,6 +320,14 @@
     });
 
     retryBtn.addEventListener('click', checkHealth);
+
+    // Press Enter to fire the primary action (export, or save-next in download mode).
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !mainBtn.disabled) {
+        e.preventDefault();
+        mainBtn.click();
+      }
+    });
 
     // ── Messages from the plugin sandbox ───────────────────────────────────
     window.addEventListener('message', (event) => {
