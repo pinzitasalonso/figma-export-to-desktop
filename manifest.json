@@ -7,7 +7,8 @@
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["http://127.0.0.1:31773", "http://localhost:31773"],
-    "reasoning": "Sends exported PNG bytes to a local helper on 127.0.0.1 that writes them directly to your Desktop."
+    "allowedDomains": ["none"],
+    "devAllowedDomains": ["http://localhost:31773"],
+    "reasoning": "Sends exported PNG bytes to a local helper on localhost that writes them directly to your Desktop."
   }
 }

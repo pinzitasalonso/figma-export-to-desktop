@@ -23,7 +23,6 @@ const os   = require('os');
 const path = require('path');
 
 const VERSION   = '1.0.0';
-const HOST      = '127.0.0.1';
 const PORT      = parseInt(process.env.FIGMA_EXPORT_PORT || '31773', 10);
 const TOKEN     = process.env.FIGMA_EXPORT_TOKEN || 'figma-export-local-dev';
 const DESKTOP   = path.join(os.homedir(), 'Desktop');
@@ -56,7 +55,7 @@ function sanitizePngName(raw) {
   return out;
 }
 
-const server = http.createServer((req, res) => {
+function handler(req, res) {
   cors(res);
 
   if (req.method === 'OPTIONS') {
@@ -119,18 +118,24 @@ const server = http.createServer((req, res) => {
   }
 
   json(res, 404, { ok: false, error: 'not found' });
-});
+}
 
-server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use. Another helper instance may be running.`);
-    process.exit(1);
-  }
-  throw e;
-});
+console.log(`figma-export-to-desktop helper v${VERSION}`);
+console.log(`writing PNGs to ${DESKTOP}`);
 
-server.listen(PORT, HOST, () => {
-  console.log(`figma-export-to-desktop helper v${VERSION}`);
-  console.log(`listening on http://${HOST}:${PORT}`);
-  console.log(`writing PNGs to ${DESKTOP}`);
-});
+// Listen on both loopback stacks so the plugin's fetch to "localhost"
+// connects whether it resolves to 127.0.0.1 (IPv4) or ::1 (IPv6).
+function listenLoopback(addr, label, primary) {
+  const s = http.createServer(handler);
+  s.on('error', (e) => {
+    if (e.code === 'EADDRINUSE' && primary) {
+      console.error(`Port ${PORT} is already in use. Another helper instance may be running.`);
+      process.exit(1);
+    }
+    console.error(`(${label}) ${e.code || e.message}`);
+  });
+  s.listen(PORT, addr, () => console.log(`listening on http://${label}:${PORT}`));
+}
+
+listenLoopback('127.0.0.1', '127.0.0.1', true);
+listenLoopback('::1', '[::1]', false);

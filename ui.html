@@ -81,8 +81,8 @@
 
   <script>
     const PORT  = 31773;
-    const BASE  = 'http://127.0.0.1:' + PORT;
-    const TOKEN = 'figma-export-local-dev'; // must match the helper's FIGMA_EXPORT_TOKEN
+    const BASE  = 'http://localhost:' + PORT; // must match manifest devAllowedDomains
+    const TOKEN = 'figma-export-local-dev';   // must match the helper's FIGMA_EXPORT_TOKEN
 
     const bar      = document.getElementById('bar');
     const desc     = document.getElementById('desc');
