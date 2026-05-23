@@ -145,7 +145,7 @@
     <span id="barText">Checking for helper…</span>
   </div>
 
-  <p id="desc">Exports selected frames (or all frames on the page) as PNG at 2× scale.</p>
+  <p id="desc">Exports selected layers (or all frames on the page) as PNG at 2× scale.</p>
 
   <button id="mainBtn" class="primary">Export to Desktop</button>
   <div id="counter"></div>
@@ -218,7 +218,7 @@
 
       if (state.connected) {
         setBar('Helper connected — saving straight to Desktop', 'ok');
-        desc.textContent = 'Exports selected frames (or all frames on the page) as PNG at 2× — written directly to your Desktop, no dialogs.';
+        desc.textContent = 'Exports selected layers (or all frames on the page) as PNG at 2× — written directly to your Desktop, no dialogs.';
         mainBtn.textContent = 'Export to Desktop';
         mainBtn.disabled = false;
         startBtn.style.display = 'none';
@@ -323,7 +323,7 @@
       if (!m) return;
 
       if (m.type === 'empty') {
-        setMsg('No frames found on this page.', 'error');
+        setMsg('Nothing to export. Select layers, or add frames to the page.', 'error');
         mainBtn.disabled = false;
         return;
       }

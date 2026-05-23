@@ -16,22 +16,24 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
         return;
     }
     if (msg.type === "export") {
-        const frames = getFramesToExport();
-        if (frames.length === 0) {
+        const nodes = getNodesToExport();
+        if (nodes.length === 0) {
             figma.ui.postMessage({ type: "empty" });
             return;
         }
         const exported = [];
-        for (const frame of frames) {
+        for (const node of nodes) {
+            if (!("exportAsync" in node))
+                continue;
             try {
-                const bytes = yield frame.exportAsync({
+                const bytes = yield node.exportAsync({
                     format: "PNG",
                     constraint: { type: "SCALE", value: 2 },
                 });
-                exported.push({ name: frame.name, bytes: Array.from(bytes) });
+                exported.push({ name: node.name, bytes: Array.from(bytes) });
             }
             catch (err) {
-                console.error(`Failed to export "${frame.name}":`, err);
+                console.error(`Failed to export "${node.name}":`, err);
             }
         }
         figma.ui.postMessage({
@@ -44,9 +46,12 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
         figma.closePlugin();
     }
 });
-function getFramesToExport() {
-    const selected = figma.currentPage.selection.filter((node) => node.type === "FRAME");
-    if (selected.length > 0)
-        return selected;
+// Selected layers of any type take priority; otherwise fall back to all
+// top-level frames on the page.
+function getNodesToExport() {
+    const selection = figma.currentPage.selection;
+    if (selection.length > 0) {
+        return selection.filter((node) => "exportAsync" in node);
+    }
     return figma.currentPage.children.filter((node) => node.type === "FRAME");
 }

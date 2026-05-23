@@ -1,6 +1,6 @@
 # figma-export-to-desktop
 
-A Figma plugin that exports selected frames (or all frames on the current page) as PNG files — flat, no subdirectories, at 2× scale, named after each frame (e.g. `Hero Section.png`).
+A Figma plugin that exports selected layers (or all frames on the current page) as PNG files — flat, no subdirectories, at 2× scale, named after each layer (e.g. `Hero Section.png`).
 
 It has **two ways** to get the files onto your machine:
 
@@ -49,7 +49,7 @@ The helper needs **only Node 16+** — it has zero npm dependencies (Node built-
 
 ### 4. Export
 
-1. *(Optional)* Select frames. If nothing is selected, all top-level frames on the page are exported.
+1. *(Optional)* Select any layers (frames, groups, components, shapes, text…). If nothing is selected, all top-level frames on the page are exported.
 2. Run **Plugins → Development → Desktop Exporter**.
 3. The banner shows the mode:
    - **Helper connected** → click **Export to Desktop**; files appear on your Desktop instantly.
