@@ -105,13 +105,52 @@ A localhost server that writes files deserves care, so the helper:
 - requires a shared **token** (`X-Auth-Token`);
 - writes **only** inside `~/Desktop`, **only** `*.png`, with filename sanitisation, a path-traversal guard, and a 50 MB-per-file cap.
 
-The default token (`figma-export-local-dev`) is in this public repo, so it is **not secret**. For real protection set a private one in both places (they must match):
+The default token (`figma-export-local-dev`) shipped in the repo is a placeholder, **not a secret**. For real protection, set a private one — the helper reads it from the environment, the plugin UI reads it from a gitignored `secret.js`. Both must match.
+
+**1. Pick a random token:**
 
 ```bash
-export FIGMA_EXPORT_TOKEN="your-long-random-secret"   # before starting the helper
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-…and set the same value for `TOKEN` near the top of `ui.html`, then click **Retry connection**.
+**2. Plugin side — create `secret.js` next to `ui.html`:**
+
+```bash
+cp secret.example.js secret.js
+# then edit secret.js and paste your token into window.SECRET_TOKEN
+```
+
+`secret.js` is gitignored. If it's missing or fails to load, `ui.html` silently falls back to the public default — so a fresh clone still works, it's just unauthenticated.
+
+**3. Helper side — export `FIGMA_EXPORT_TOKEN` with the same value.**
+
+For a foreground run:
+
+```bash
+export FIGMA_EXPORT_TOKEN="<paste the same value>"
+node helper/server.js
+```
+
+For the auto-start launchd agent, add a `FIGMA_EXPORT_TOKEN` entry to the `EnvironmentVariables` dict in `~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist`, then reload:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
+launchctl load   ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
+```
+
+**4. In Figma, click "Retry connection".** The banner should go green.
+
+**Verifying the gate works:** the old default token should now be rejected.
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" \
+  -H "X-Auth-Token: figma-export-local-dev" \
+  -X POST http://127.0.0.1:31773/save     # expect 401
+```
+
+#### Why a `secret.js` and not a `.env` file?
+
+`ui.html` runs inside Figma's plugin sandbox — a browser iframe with no Node, no `process.env`, no filesystem access. It can only load static files from the plugin folder, so the token has to ship as a JS global the UI reads. The helper (`server.js`) does run in Node and reads `FIGMA_EXPORT_TOKEN` from a real env var — strictly stronger than dotenv, since there's no file on disk to leak.
 
 ---
 
@@ -127,13 +166,20 @@ cd figma-export-to-desktop
 # 2. Build the plugin
 npm install && npm run build
 
-# 3. Start the helper and register it to auto-start at login
+# 3. (Optional but recommended) Set a private token.
+#    Use the SAME random value in both files. See the "Security" section above
+#    for the full flow.
+cp secret.example.js secret.js                    # edit secret.js → paste token
+#    Then add FIGMA_EXPORT_TOKEN to helper/install.sh's plist OR export it
+#    before running install.sh / server.js.
+
+# 4. Start the helper and register it to auto-start at login
 cd helper && ./install.sh
 
-# 4. Verify (expect: {"ok":true,...})
+# 5. Verify (expect: {"ok":true,...})
 curl -s http://localhost:31773/health
 
-# 5. In the Figma desktop app:
+# 6. In the Figma desktop app:
 #    Plugins → Development → Import plugin from manifest…  →  select <repo>/manifest.json
 ```
 
@@ -151,6 +197,7 @@ Other OSes: `node server.js` runs anywhere Node does — only the auto-start ste
 | **An error appears instead of exporting** | The plugin now reports the reason. Common causes: the layer is **hidden** or has **zero size** — those can't be rasterised. Make it visible / give it size and retry. |
 | **Enter doesn't trigger export** | Click the plugin window once so it has focus, then press Enter. |
 | **Files go to Downloads, not Desktop** | That's downloads mode (helper not connected). Start the helper for direct-to-Desktop writes. |
+| **Banner is green but exports 401** | Token mismatch. The helper's `FIGMA_EXPORT_TOKEN` env var doesn't match `window.SECRET_TOKEN` in `secret.js`. Make them identical and click **Retry connection**. |
 
 ---
 
@@ -158,9 +205,10 @@ Other OSes: `node server.js` runs anywhere Node does — only the auto-start ste
 
 ```
 figma-export-to-desktop/
-├── manifest.json     Plugin manifest (declares localhost networkAccess)
-├── code.ts / code.js Sandbox: exportAsync at 2×, posts bytes to the UI
-├── ui.html           UI: helper detection, server export + download fallback
+├── manifest.json       Plugin manifest (declares localhost networkAccess)
+├── code.ts / code.js   Sandbox: exportAsync at 2×, posts bytes to the UI
+├── ui.html             UI: helper detection, server export + download fallback
+├── secret.example.js   Template for the gitignored secret.js (your real token)
 ├── tsconfig.json
 ├── package.json
 └── helper/
