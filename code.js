@@ -16,31 +16,51 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
         return;
     }
     if (msg.type === "export") {
-        const nodes = getNodesToExport();
-        if (nodes.length === 0) {
-            figma.ui.postMessage({ type: "empty" });
-            return;
-        }
-        const exported = [];
-        for (const node of nodes) {
-            if (!("exportAsync" in node))
-                continue;
-            try {
-                const bytes = yield node.exportAsync({
-                    format: "PNG",
-                    constraint: { type: "SCALE", value: 2 },
+        try {
+            const nodes = getNodesToExport();
+            if (nodes.length === 0) {
+                figma.ui.postMessage({ type: "empty" });
+                return;
+            }
+            const exported = [];
+            const failures = [];
+            for (const node of nodes) {
+                const name = node.name;
+                if (!("exportAsync" in node)) {
+                    failures.push(`${name}: not exportable`);
+                    continue;
+                }
+                try {
+                    const bytes = yield node.exportAsync({
+                        format: "PNG",
+                        constraint: { type: "SCALE", value: 2 },
+                    });
+                    exported.push({ name, bytes: Array.from(bytes) });
+                }
+                catch (err) {
+                    const reason = err instanceof Error ? err.message : String(err);
+                    failures.push(`${name}: ${reason}`);
+                    console.error(`Failed to export "${name}":`, err);
+                }
+            }
+            // Always reply so the UI never gets stuck on "Exporting…".
+            if (exported.length === 0) {
+                figma.ui.postMessage({
+                    type: "error",
+                    message: failures[0] || "Nothing could be exported.",
                 });
-                exported.push({ name: node.name, bytes: Array.from(bytes) });
+                return;
             }
-            catch (err) {
-                console.error(`Failed to export "${node.name}":`, err);
-            }
+            figma.ui.postMessage({
+                type: "done",
+                exports: exported,
+                pageName: figma.currentPage.name,
+            });
         }
-        figma.ui.postMessage({
-            type: "done",
-            exports: exported,
-            pageName: figma.currentPage.name,
-        });
+        catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            figma.ui.postMessage({ type: "error", message: reason });
+        }
     }
     else if (msg.type === "close") {
         figma.closePlugin();
