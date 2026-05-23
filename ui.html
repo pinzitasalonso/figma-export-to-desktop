@@ -13,148 +13,264 @@
       background: #fff;
     }
 
+    #bar {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      padding: 6px 8px;
+      border-radius: 5px;
+      background: #f5f5f5;
+      color: #888;
+    }
+    #bar.ok   { background: #e8f7ee; color: #1b8a4b; }
+    #bar.warn { background: #fdf0e6; color: #c0682a; }
+
     p { color: #666; margin-bottom: 12px; line-height: 1.5; }
 
     button {
       width: 100%;
       padding: 10px 16px;
-      background: #18a0fb;
-      color: #fff;
       border: none;
       border-radius: 6px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
+      margin-bottom: 8px;
     }
-    button:hover:not(:disabled) { background: #0d8de0; }
-    button:disabled { background: #bbb; cursor: not-allowed; }
+    button:disabled { background: #bbb !important; color: #fff !important; cursor: not-allowed; }
 
-    #counter {
+    .primary   { background: #18a0fb; color: #fff; }
+    .primary:hover:not(:disabled) { background: #0d8de0; }
+    .secondary { background: #efefef; color: #333; }
+    .secondary:hover:not(:disabled) { background: #e2e2e2; }
+
+    #counter { font-size: 11px; color: #999; text-align: center; min-height: 14px; margin-bottom: 6px; }
+
+    #howto {
+      display: none;
+      background: #2b2b2b;
+      color: #e6e6e6;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
       font-size: 11px;
-      color: #999;
-      margin-top: 6px;
-      text-align: center;
-      min-height: 15px;
+      line-height: 1.5;
+      padding: 10px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-bottom: 8px;
     }
 
-    #status {
-      margin-top: 10px;
-      font-size: 12px;
-      color: #777;
-      min-height: 16px;
-    }
-    #status.error   { color: #c0392b; }
-    #status.success { color: #27ae60; }
+    #msg { font-size: 12px; color: #777; min-height: 16px; }
+    #msg.error   { color: #c0392b; }
+    #msg.success { color: #27ae60; }
   </style>
 </head>
 <body>
+  <div id="bar">Checking for helper…</div>
   <p id="desc">Exports selected frames (or all frames on the page) as PNG at 2× scale.</p>
-  <button id="mainBtn">Export Frames</button>
+
+  <button id="mainBtn" class="primary">Export to Desktop</button>
   <div id="counter"></div>
-  <div id="status"></div>
+
+  <button id="startBtn" class="secondary" style="display:none">How to start the helper</button>
+  <pre id="howto"></pre>
+  <button id="retryBtn" class="secondary" style="display:none">Retry connection</button>
+
+  <div id="msg"></div>
 
   <script>
-    const mainBtn = document.getElementById('mainBtn');
-    const counter = document.getElementById('counter');
-    const status  = document.getElementById('status');
-    const desc    = document.getElementById('desc');
+    const PORT  = 31773;
+    const BASE  = 'http://127.0.0.1:' + PORT;
+    const TOKEN = 'figma-export-local-dev'; // must match the helper's FIGMA_EXPORT_TOKEN
 
-    let queue = [];  // [{ name: string, bytes: number[] }]
-    let idx   = 0;
-    let phase = 'idle'; // 'idle' | 'saving'
+    const bar      = document.getElementById('bar');
+    const desc     = document.getElementById('desc');
+    const mainBtn  = document.getElementById('mainBtn');
+    const counter  = document.getElementById('counter');
+    const startBtn = document.getElementById('startBtn');
+    const howto    = document.getElementById('howto');
+    const retryBtn = document.getElementById('retryBtn');
+    const msg      = document.getElementById('msg');
 
-    function setStatus(msg, cls) {
-      status.textContent = msg;
-      status.className = cls || '';
+    const state = { connected: false, mode: 'idle', queue: [], idx: 0 };
+
+    const HOWTO_TEXT =
+      "The plugin can't launch the helper itself (Figma sandbox).\n" +
+      "Open Terminal and run:\n\n" +
+      "  cd <path-to>/figma-export-to-desktop/helper\n" +
+      "  node server.js\n\n" +
+      "Or auto-start it at login:\n\n" +
+      "  cd <path-to>/figma-export-to-desktop/helper\n" +
+      "  ./install.sh\n\n" +
+      "Then click “Retry connection”.";
+
+    function setMsg(t, cls) { msg.textContent = t || ''; msg.className = cls || ''; }
+    function setCounter(t) { counter.textContent = t || ''; }
+
+    // ── Connection detection ───────────────────────────────────────────────
+    async function checkHealth() {
+      bar.textContent = 'Checking for helper…';
+      bar.className = '';
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1500);
+        const r = await fetch(BASE + '/health', { signal: ctrl.signal });
+        clearTimeout(timer);
+        state.connected = r.ok;
+      } catch (e) {
+        state.connected = false;
+      }
+      render();
     }
 
-    function setCounter(msg) { counter.textContent = msg; }
+    function render() {
+      if (state.mode === 'stepping') return; // mid step-through, leave UI alone
 
+      if (state.connected) {
+        bar.textContent = '● Helper connected — saving straight to Desktop';
+        bar.className = 'ok';
+        desc.textContent = 'Exports selected frames (or all frames on the page) as PNG at 2× — written directly to your Desktop, no dialogs.';
+        mainBtn.textContent = 'Export to Desktop';
+        mainBtn.disabled = false;
+        startBtn.style.display = 'none';
+        retryBtn.style.display = 'none';
+        howto.style.display = 'none';
+      } else {
+        bar.textContent = '● Helper not running';
+        bar.className = 'warn';
+        desc.textContent = 'Start the local helper for one-click, dialog-free export — or fall back to per-file downloads below.';
+        mainBtn.textContent = 'Export via downloads';
+        mainBtn.disabled = false;
+        startBtn.style.display = 'block';
+        retryBtn.style.display = 'block';
+      }
+    }
+
+    // ── Server export (zero dialogs) ───────────────────────────────────────
+    async function serverSaveAll(queue) {
+      for (let i = 0; i < queue.length; i++) {
+        const f = queue[i];
+        setMsg('Saving ' + (i + 1) + '/' + queue.length + ': ' + f.name + '.png …');
+        try {
+          const r = await fetch(BASE + '/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'X-File-Name': f.name + '.png',
+              'X-Auth-Token': TOKEN,
+            },
+            body: new Uint8Array(f.bytes),
+          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+        } catch (e) {
+          setMsg('Failed on ' + f.name + '.png (' + e.message + '). Is the helper still running?', 'error');
+          mainBtn.disabled = false;
+          checkHealth();
+          return;
+        }
+      }
+      setMsg('✓ Saved ' + queue.length + ' file' + (queue.length !== 1 ? 's' : '') + ' to your Desktop.', 'success');
+      mainBtn.disabled = false;
+    }
+
+    // ── Download fallback (one click per file) ─────────────────────────────
     function downloadCurrent() {
-      const item  = queue[idx];
-      const blob  = new Blob([new Uint8Array(item.bytes)], { type: 'image/png' });
-      const url   = URL.createObjectURL(blob);
-      const a     = document.createElement('a');
-      a.href      = url;
-      a.download  = item.name + '.png';
+      const f = state.queue[state.idx];
+      const blob = new Blob([new Uint8Array(f.bytes)], { type: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name + '.png';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
     }
 
-    function advanceTo(i) {
-      idx = i;
-      if (idx < queue.length) {
-        const item = queue[idx];
-        mainBtn.textContent = '↓  Save  ' + item.name + '.png';
-        setCounter((idx + 1) + ' of ' + queue.length);
+    function stepTo(i) {
+      state.idx = i;
+      if (state.idx < state.queue.length) {
+        const f = state.queue[state.idx];
+        mainBtn.textContent = '↓  Save  ' + f.name + '.png';
+        setCounter((state.idx + 1) + ' of ' + state.queue.length);
         mainBtn.disabled = false;
       } else {
-        // All done
-        phase = 'idle';
-        queue = [];
-        idx   = 0;
-        desc.textContent = 'Exports selected frames (or all frames on the page) as PNG at 2× scale.';
-        mainBtn.textContent = 'Export Frames';
+        state.mode = 'idle';
+        state.queue = [];
+        state.idx = 0;
         setCounter('');
-        setStatus('✓ All files saved!', 'success');
-        mainBtn.disabled = false;
+        setMsg('✓ All files saved.', 'success');
+        render();
       }
     }
 
+    // ── Buttons ────────────────────────────────────────────────────────────
     mainBtn.addEventListener('click', () => {
-      if (phase === 'idle') {
-        mainBtn.disabled = true;
-        setStatus('Exporting…');
-        setCounter('');
-        parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
-        return;
-      }
-
-      if (phase === 'saving') {
+      if (state.mode === 'stepping') {
         mainBtn.disabled = true;
         downloadCurrent();
-        advanceTo(idx + 1);
+        stepTo(state.idx + 1);
+        return;
+      }
+      mainBtn.disabled = true;
+      setMsg('Exporting…');
+      setCounter('');
+      parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
+    });
+
+    startBtn.addEventListener('click', () => {
+      if (howto.style.display === 'block') {
+        howto.style.display = 'none';
+      } else {
+        howto.textContent = HOWTO_TEXT;
+        howto.style.display = 'block';
       }
     });
 
+    retryBtn.addEventListener('click', checkHealth);
+
+    // ── Messages from the plugin sandbox ───────────────────────────────────
     window.addEventListener('message', (event) => {
-      const msg = event.data.pluginMessage;
-      if (!msg) return;
+      const m = event.data.pluginMessage;
+      if (!m) return;
 
-      if (msg.type === 'empty') {
-        setStatus('No frames found on this page.', 'error');
+      if (m.type === 'empty') {
+        setMsg('No frames found on this page.', 'error');
         mainBtn.disabled = false;
         return;
       }
-
-      if (msg.type === 'error') {
-        setStatus('Error: ' + msg.message, 'error');
+      if (m.type === 'error') {
+        setMsg('Error: ' + m.message, 'error');
         mainBtn.disabled = false;
         return;
       }
-
-      if (msg.type === 'done') {
-        queue = msg.exports.map(item => ({
-          name:  (item.name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim() || 'frame'),
+      if (m.type === 'done') {
+        const queue = m.exports.map((item) => ({
+          name: (item.name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim() || 'frame'),
           bytes: item.bytes,
         }));
-        idx = 0;
 
         if (queue.length === 0) {
-          setStatus('No frames exported.', 'error');
+          setMsg('No frames exported.', 'error');
           mainBtn.disabled = false;
           return;
         }
 
-        phase = 'saving';
-        setStatus('');
-        desc.textContent = 'Click the button once per file. First save will ask where — pick your Desktop; macOS remembers it for the rest.';
-        advanceTo(0);
+        if (state.connected) {
+          serverSaveAll(queue);
+        } else {
+          state.mode = 'stepping';
+          state.queue = queue;
+          setMsg('');
+          desc.textContent = 'Click once per file. First save asks where — pick Desktop; macOS reuses it for the rest.';
+          stepTo(0);
+        }
       }
     });
+
+    // Kick off detection on load.
+    checkHealth();
   </script>
 </body>
 </html>

@@ -1,0 +1,15 @@
+{
+  "name": "figma-export-to-desktop-helper",
+  "version": "1.0.0",
+  "description": "Local helper server that writes PNGs from the Figma plugin straight to the Desktop",
+  "bin": {
+    "figma-export-to-desktop-helper": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
