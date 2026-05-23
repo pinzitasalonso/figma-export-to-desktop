@@ -47,11 +47,109 @@
   </style>
 </head>
 <body>
-  <p>Exports selected frames (or all frames on the page) as PNG at 2× scale.</p>
+  <p>Exports selected frames (or all frames on the page) as PNG at 2× scale — bundled into one ZIP.</p>
   <button id="exportBtn">Export to Desktop</button>
   <div id="status"></div>
 
   <script>
+    // ── Minimal ZIP builder (DEFLATE method 0 = stored, no compression) ──────
+
+    const CRC_TABLE = (() => {
+      const t = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        t[i] = c;
+      }
+      return t;
+    })();
+
+    function crc32(buf) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < buf.length; i++)
+        crc = CRC_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function buildZip(files) {
+      // files: [{ name: string, data: Uint8Array }]
+      const enc      = new TextEncoder();
+      const locals   = [];   // local-header + data chunks, in order
+      const centrals = [];   // central-directory headers
+      let   offset   = 0;
+
+      for (const { name, data } of files) {
+        const nameBytes = enc.encode(name);
+        const crc       = crc32(data);
+
+        // Local file header (30 bytes + filename)
+        const local = new Uint8Array(30 + nameBytes.length);
+        const lv    = new DataView(local.buffer);
+        lv.setUint32( 0, 0x04034B50, true); // signature PK\x03\x04
+        lv.setUint16( 4, 20,         true); // version needed (2.0)
+        lv.setUint16( 6, 0,          true); // flags
+        lv.setUint16( 8, 0,          true); // method: stored
+        lv.setUint32(10, 0,          true); // mod time + date (zero = no timestamp)
+        lv.setUint32(14, crc,        true); // CRC-32
+        lv.setUint32(18, data.length,true); // compressed size
+        lv.setUint32(22, data.length,true); // uncompressed size
+        lv.setUint16(26, nameBytes.length, true);
+        lv.setUint16(28, 0,          true); // extra field length
+        local.set(nameBytes, 30);
+
+        // Central directory header (46 bytes + filename)
+        const central = new Uint8Array(46 + nameBytes.length);
+        const cv      = new DataView(central.buffer);
+        cv.setUint32( 0, 0x02014B50, true); // signature PK\x01\x02
+        cv.setUint16( 4, 20,         true); // version made by
+        cv.setUint16( 6, 20,         true); // version needed
+        cv.setUint16( 8, 0,          true); // flags
+        cv.setUint16(10, 0,          true); // method: stored
+        cv.setUint32(12, 0,          true); // mod time + date
+        cv.setUint32(16, crc,        true); // CRC-32
+        cv.setUint32(20, data.length,true); // compressed size
+        cv.setUint32(24, data.length,true); // uncompressed size
+        cv.setUint16(28, nameBytes.length, true);
+        cv.setUint16(30, 0,          true); // extra length
+        cv.setUint16(32, 0,          true); // comment length
+        cv.setUint16(34, 0,          true); // disk number start
+        cv.setUint16(36, 0,          true); // internal attrs
+        cv.setUint32(38, 0,          true); // external attrs
+        cv.setUint32(42, offset,     true); // offset of local header
+        central.set(nameBytes, 46);
+
+        locals.push(local, data);
+        centrals.push(central);
+        offset += local.length + data.length;
+      }
+
+      const centralSize = centrals.reduce((s, c) => s + c.length, 0);
+
+      // End of central directory record (22 bytes)
+      const eocd = new Uint8Array(22);
+      const ev   = new DataView(eocd.buffer);
+      ev.setUint32( 0, 0x06054B50,    true); // signature PK\x05\x06
+      ev.setUint16( 4, 0,             true); // disk number
+      ev.setUint16( 6, 0,             true); // disk with CD
+      ev.setUint16( 8, files.length,  true); // entries this disk
+      ev.setUint16(10, files.length,  true); // total entries
+      ev.setUint32(12, centralSize,   true); // size of central dir
+      ev.setUint32(16, offset,        true); // offset of central dir
+      ev.setUint16(20, 0,             true); // comment length
+
+      // Concatenate: local headers+data, central dirs, EOCD
+      const totalSize = offset + centralSize + 22;
+      const zip       = new Uint8Array(totalSize);
+      let   pos       = 0;
+      for (const chunk of [...locals, ...centrals, eocd]) {
+        zip.set(chunk, pos);
+        pos += chunk.length;
+      }
+      return zip;
+    }
+
+    // ── Plugin UI logic ───────────────────────────────────────────────────────
+
     const btn    = document.getElementById('exportBtn');
     const status = document.getElementById('status');
 
@@ -60,25 +158,13 @@
       status.className = cls || '';
     }
 
-    function downloadFile(bytes, filename) {
-      const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
     btn.addEventListener('click', () => {
       btn.disabled = true;
       setStatus('Exporting…');
       parent.postMessage({ pluginMessage: { type: 'export' } }, '*');
     });
 
-    window.addEventListener('message', async (event) => {
+    window.addEventListener('message', (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
 
@@ -95,26 +181,24 @@
       }
 
       if (msg.type === 'done') {
-        let count = 0;
+        const files = msg.exports.map(item => ({
+          name: (item.name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim() || 'frame') + '.png',
+          data: new Uint8Array(item.bytes),
+        }));
 
-        for (let i = 0; i < msg.exports.length; i++) {
-          const item     = msg.exports[i];
-          const safeName = item.name
-            .replace(/[\/\\?%*:|"<>]/g, '-')
-            .replace(/\s+/g, ' ')
-            .trim() || 'frame';
-
-          downloadFile(item.bytes, safeName + '.png');
-          count++;
-
-          // Small stagger so the browser doesn't coalesce/drop concurrent downloads.
-          if (i < msg.exports.length - 1) {
-            await new Promise(r => setTimeout(r, 150));
-          }
-        }
+        const zip  = buildZip(files);
+        const blob = new Blob([zip], { type: 'application/zip' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = (msg.pageName || 'frames') + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
 
         setStatus(
-          'Done! ' + count + ' file' + (count !== 1 ? 's' : '') + ' saved to your Downloads folder.',
+          'Downloaded ' + files.length + ' frame' + (files.length !== 1 ? 's' : '') + ' → ' + a.download,
           'success'
         );
         btn.disabled = false;

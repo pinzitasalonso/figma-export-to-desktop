@@ -27,7 +27,11 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
       }
     }
 
-    figma.ui.postMessage({ type: "done", exports: exported });
+    figma.ui.postMessage({
+      type: "done",
+      exports: exported,
+      pageName: figma.currentPage.name,
+    });
   } else if (msg.type === "close") {
     figma.closePlugin();
   }

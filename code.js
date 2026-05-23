@@ -29,7 +29,11 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
                 console.error(`Failed to export "${frame.name}":`, err);
             }
         }
-        figma.ui.postMessage({ type: "done", exports: exported });
+        figma.ui.postMessage({
+            type: "done",
+            exports: exported,
+            pageName: figma.currentPage.name,
+        });
     }
     else if (msg.type === "close") {
         figma.closePlugin();
