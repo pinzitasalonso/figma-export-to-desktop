@@ -157,10 +157,15 @@
 
   <div id="msg"></div>
 
+  <script src="secret.js" onerror="void 0"></script>
   <script>
     const PORT  = 31773;
     const BASE  = 'http://localhost:' + PORT; // must match manifest devAllowedDomains
-    const TOKEN = 'figma-export-local-dev';   // must match the helper's FIGMA_EXPORT_TOKEN
+    // Token must match the helper's FIGMA_EXPORT_TOKEN. Override by creating a
+    // gitignored `secret.js` next to ui.html that sets `window.SECRET_TOKEN`.
+    const TOKEN = (typeof window !== 'undefined' && typeof window.SECRET_TOKEN === 'string' && window.SECRET_TOKEN)
+      ? window.SECRET_TOKEN
+      : 'figma-export-local-dev';
 
     const bar      = document.getElementById('bar');
     const barText  = document.getElementById('barText');
