@@ -15,13 +15,50 @@ Flat output · 2× scale · named after each layer · no dialogs (with the helpe
 
 ---
 
-Select some layers, hit **Export** (or just press **Enter**), and the PNGs appear on your Desktop — already named, no folders to dig through, no "Save As" dialog for every file.
+## Setup (macOS, ~2 min)
+
+```bash
+# 1. Clone & install
+git clone https://github.com/pinzitasalonso/figma-export-to-desktop.git
+cd figma-export-to-desktop
+npm install
+
+# 2. (Optional but recommended) Set a private auth token.
+#    Generate a random value and put the SAME one in both places.
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+cp secret.example.js secret.js   # paste the token into window.SECRET_TOKEN
+#    Also add it as FIGMA_EXPORT_TOKEN in helper/install.sh's plist block.
+#    Skip this whole step to use the public default (fine for a single trusted user).
+
+# 3. Build the plugin (compiles code.ts, inlines the token into ui.html)
+npm run build
+
+# 4. Auto-start the helper at login
+cd helper && ./install.sh && cd ..
+
+# 5. Verify the helper is running
+curl -s http://localhost:31773/health   # expect {"ok":true,...}
+```
+
+Then in the **Figma desktop app**: **Plugins → Development → Import plugin from manifest…** and select `manifest.json` from this repo.
+
+## Use
+
+1. Select layers in Figma — or select nothing to export every top-level frame on the page (including frames inside Sections).
+2. Run **Plugins → Development → Desktop Exporter** (or **⌘⌥P** to re-run the last plugin).
+3. Press **Enter** or click the button.
+
+Files land on `~/Desktop` named `<layer>.png` at 2× scale. Duplicate names get ` 2`, ` 3`, … appended (Finder-style).
+
+**Windows/Linux**: everything works except `helper/install.sh` (macOS launchd). Run `node helper/server.js` manually, or wire up a systemd user service / Task Scheduler entry.
+
+---
 
 ## Why this exists
 
-Figma's own export panel makes you click through a save dialog and pick a destination every time. Worse, a plugin **can't** silently write files to disk on its own: Figma's plugin webview sandboxes the File System Access API and routes every browser download through a native save dialog.
+Figma's export panel makes you click through a save dialog every time, and a plugin **can't** silently write files to disk on its own — Figma's webview sandboxes the File System Access API and routes browser downloads through a native save dialog.
 
-Desktop Exporter ships a tiny **local helper** to get around that. The plugin sends the PNG bytes to a small server on `localhost`, and the server writes them to your Desktop. No dialogs, plain files, flat. If the helper isn't running, the plugin automatically falls back to ordinary downloads.
+Desktop Exporter ships a tiny **local helper** to get around that. The plugin sends PNG bytes to a small server on `localhost`, which writes them to your Desktop. No dialogs, plain files, flat. If the helper isn't running, the plugin automatically falls back to ordinary downloads.
 
 ## Two ways to export
 
@@ -37,53 +74,14 @@ The plugin detects the helper on launch and shows you which mode is active.
 ## What gets exported
 
 - **Selected layers** of any kind — frames, groups, components, instances, shapes, text, vectors.
-- If **nothing is selected**, every top-level frame on the current page.
+- If **nothing is selected**, every top-level frame on the page, including frames nested in Sections.
 - Each file is `<layer name>.png` at **2× scale**, written **flat** (no subdirectories).
-- Illegal filename characters (`/ \ ? % * : | " < >`) become `-`.
-
----
-
-## Quick start
-
-### 1. Build the plugin
-
-```bash
-npm install
-npm run build        # compiles code.ts → code.js
-```
-
-### 2. Start the helper (for zero-dialog export)
-
-```bash
-cd helper
-node server.js       # foreground; Ctrl+C to stop
-```
-
-…or install it once so it auto-starts at every login (macOS):
-
-```bash
-cd helper
-./install.sh
-```
-
-The helper has **zero npm dependencies** — it only needs **Node 16+**.
-
-### 3. Load the plugin in Figma
-
-1. Open the **Figma desktop app**.
-2. **Plugins → Development → Import plugin from manifest…**
-3. Select `manifest.json` from this folder.
-
-### 4. Export
-
-1. *(Optional)* Select the layers you want. With nothing selected, all top-level frames are exported.
-2. Run **Plugins → Development → Desktop Exporter**.
-3. Press **Enter** or click the button. In helper mode the files appear on your Desktop instantly; in downloads mode you confirm each save (the first one asks where — pick Desktop, macOS reuses it).
+- Illegal filename characters (`/ \ ? % * : | " < >`) become `-`. Duplicate names are disambiguated as `name 2.png`, `name 3.png`, ….
 
 ## Keyboard tips
 
 - **Enter** runs the export from inside the plugin window (no click needed).
-- Want a hotkey to *open* the plugin? Figma re-runs your last plugin with **⌘⌥P**. For a dedicated key, add a macOS **System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts** entry for Figma with the menu title `Desktop Exporter`.
+- Want a hotkey to *open* the plugin? Figma re-runs your last plugin with **⌘⌥P**. For a dedicated key, add a macOS **System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts** entry for Figma with menu title `Desktop Exporter`.
 
 ---
 
@@ -96,8 +94,9 @@ A dependency-free Node server (`helper/server.js`) that listens on loopback and 
 - **`POST /save`** — raw PNG bytes in the body, `X-File-Name` for the name, `X-Auth-Token` for auth.
 - **Logs** (when run via launchd): `/tmp/figma-export-helper.log`.
 - **Uninstall the auto-start agent:** `cd helper && ./uninstall.sh`.
+- **Zero npm dependencies** — only needs **Node 16+**.
 
-### Security
+### Security model
 
 A localhost server that writes files deserves care, so the helper:
 
@@ -105,42 +104,16 @@ A localhost server that writes files deserves care, so the helper:
 - requires a shared **token** (`X-Auth-Token`);
 - writes **only** inside `~/Desktop`, **only** `*.png`, with filename sanitisation, a path-traversal guard, and a 50 MB-per-file cap.
 
-The default token (`figma-export-local-dev`) shipped in the repo is a placeholder, **not a secret**. For real protection, set a private one — the helper reads it from the environment, the plugin UI reads it from a gitignored `secret.js`. Both must match.
+The default token (`figma-export-local-dev`) shipped in the repo is a placeholder, **not a secret**. For real protection set a private one (Setup step 2): the helper reads `FIGMA_EXPORT_TOKEN` from the environment, the plugin UI reads it from a gitignored `secret.js` that the build inlines into `ui.html`. Both must match.
 
-**1. Pick a random token:**
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-**2. Plugin side — create `secret.js` next to `ui.html`:**
-
-```bash
-cp secret.example.js secret.js
-# then edit secret.js and paste your token into window.SECRET_TOKEN
-```
-
-`secret.js` is gitignored. If it's missing or fails to load, `ui.html` silently falls back to the public default — so a fresh clone still works, it's just unauthenticated.
-
-**3. Helper side — export `FIGMA_EXPORT_TOKEN` with the same value.**
-
-For a foreground run:
-
-```bash
-export FIGMA_EXPORT_TOKEN="<paste the same value>"
-node helper/server.js
-```
-
-For the auto-start launchd agent, add a `FIGMA_EXPORT_TOKEN` entry to the `EnvironmentVariables` dict in `~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist`, then reload:
+**Changing the token later?** Edit `secret.js` *and* the helper's `FIGMA_EXPORT_TOKEN`, run `npm run build`, then reload the launchd agent:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
 launchctl load   ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
 ```
 
-**4. In Figma, click "Retry connection".** The banner should go green.
-
-**Verifying the gate works:** the old default token should now be rejected.
+Verify the old token is rejected:
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" \
@@ -150,41 +123,7 @@ curl -sS -o /dev/null -w "%{http_code}\n" \
 
 #### Why a `secret.js` and not a `.env` file?
 
-`ui.html` runs inside Figma's plugin sandbox — a browser iframe with no Node, no `process.env`, no filesystem access. It can only load static files from the plugin folder, so the token has to ship as a JS global the UI reads. The helper (`server.js`) does run in Node and reads `FIGMA_EXPORT_TOKEN` from a real env var — strictly stronger than dotenv, since there's no file on disk to leak.
-
----
-
-## Installing on another machine
-
-The helper must run on whatever machine runs the Figma desktop app (it's `localhost`). On a fresh **macOS** machine, from a clone of this repo:
-
-```bash
-# 1. Clone
-git clone https://github.com/pinzitasalonso/figma-export-to-desktop.git
-cd figma-export-to-desktop
-
-# 2. Build the plugin
-npm install && npm run build
-
-# 3. (Optional but recommended) Set a private token.
-#    Use the SAME random value in both files. See the "Security" section above
-#    for the full flow.
-cp secret.example.js secret.js                    # edit secret.js → paste token
-#    Then add FIGMA_EXPORT_TOKEN to helper/install.sh's plist OR export it
-#    before running install.sh / server.js.
-
-# 4. Start the helper and register it to auto-start at login
-cd helper && ./install.sh
-
-# 5. Verify (expect: {"ok":true,...})
-curl -s http://localhost:31773/health
-
-# 6. In the Figma desktop app:
-#    Plugins → Development → Import plugin from manifest…  →  select <repo>/manifest.json
-```
-
-Requirements on the target machine: **Node 16+**, the **Figma desktop app**, plus `git` and `curl`.
-Other OSes: `node server.js` runs anywhere Node does — only the auto-start step (`install.sh`, launchd) is macOS-specific. On Windows/Linux start the server manually or wire up a Task Scheduler entry / systemd user service.
+`ui.html` runs inside Figma's plugin sandbox — a browser iframe with no Node, no `process.env`, no filesystem access. It also can't fetch relative resources, so a runtime `<script src="secret.js">` silently fails. `scripts/build-ui.js` sidesteps that by reading `secret.js` and **inlining** `window.SECRET_TOKEN` into `ui.html` before Figma loads it. The helper runs in Node and reads `FIGMA_EXPORT_TOKEN` from a real env var — strictly stronger than dotenv, since there's no file on disk to leak.
 
 ---
 
@@ -193,11 +132,12 @@ Other OSes: `node server.js` runs anywhere Node does — only the auto-start ste
 | Symptom | Fix |
 |---|---|
 | **Manifest error about `allowedDomains`** | Already handled — localhost lives in `devAllowedDomains`. Re-import the manifest. |
-| **Banner stays amber "Helper not running"** | Start the helper (`node server.js`), then click **Retry connection**. Check the log at `/tmp/figma-export-helper.log`. |
-| **An error appears instead of exporting** | The plugin now reports the reason. Common causes: the layer is **hidden** or has **zero size** — those can't be rasterised. Make it visible / give it size and retry. |
+| **Banner stays amber "Helper not running"** | Start the helper (`node helper/server.js`), then click **Retry connection**. Check the log at `/tmp/figma-export-helper.log`. |
+| **An error appears instead of exporting** | The plugin reports the reason. Common causes: the layer is **hidden** or has **zero size** — those can't be rasterised. |
 | **Enter doesn't trigger export** | Click the plugin window once so it has focus, then press Enter. |
 | **Files go to Downloads, not Desktop** | That's downloads mode (helper not connected). Start the helper for direct-to-Desktop writes. |
-| **Banner is green but exports 401** | Token mismatch. The helper's `FIGMA_EXPORT_TOKEN` env var doesn't match `window.SECRET_TOKEN` in `secret.js`. Make them identical and click **Retry connection**. |
+| **Banner is green but exports 401** | Token mismatch. The helper's `FIGMA_EXPORT_TOKEN` env var must match the token in `secret.js`. After editing either, run `npm run build` and re-open the plugin in Figma. |
+| **No frames exported when nothing is selected** | Make sure you're on the latest build (`npm run build`). The page must contain top-level frames or frames inside Sections — empty pages export nothing. |
 
 ---
 
@@ -205,10 +145,13 @@ Other OSes: `node server.js` runs anywhere Node does — only the auto-start ste
 
 ```
 figma-export-to-desktop/
-├── manifest.json       Plugin manifest (declares localhost networkAccess)
-├── code.ts / code.js   Sandbox: exportAsync at 2×, posts bytes to the UI
-├── ui.html             UI: helper detection, server export + download fallback
-├── secret.example.js   Template for the gitignored secret.js (your real token)
+├── manifest.json        Plugin manifest (declares localhost networkAccess)
+├── code.ts / code.js    Sandbox: exportAsync at 2×, posts bytes to the UI
+├── ui.template.html     UI source — built into ui.html with the token inlined
+├── ui.html              Built artifact (gitignored)
+├── secret.example.js    Template for the gitignored secret.js (your real token)
+├── scripts/
+│   └── build-ui.js      Reads secret.js, inlines window.SECRET_TOKEN into ui.html
 ├── tsconfig.json
 ├── package.json
 └── helper/

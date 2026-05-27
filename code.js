@@ -17,7 +17,7 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
     }
     if (msg.type === "export") {
         try {
-            const nodes = getNodesToExport();
+            const nodes = yield getNodesToExport();
             if (nodes.length === 0) {
                 figma.ui.postMessage({ type: "empty" });
                 return;
@@ -69,9 +69,27 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
 // Selected layers of any type take priority; otherwise fall back to all
 // top-level frames on the page.
 function getNodesToExport() {
-    const selection = figma.currentPage.selection;
-    if (selection.length > 0) {
-        return selection.filter((node) => "exportAsync" in node);
+    return __awaiter(this, void 0, void 0, function* () {
+        const selection = figma.currentPage.selection;
+        if (selection.length > 0) {
+            return selection.filter((node) => "exportAsync" in node);
+        }
+        // dynamic-page documentAccess requires loading the page before reading children.
+        yield figma.currentPage.loadAsync();
+        return collectFrames(figma.currentPage.children);
+    });
+}
+// Top-level frames on the page — but descend through Sections (which can be
+// nested) so frames grouped inside a Section are still picked up.
+function collectFrames(nodes) {
+    const out = [];
+    for (const node of nodes) {
+        if (node.type === "FRAME") {
+            out.push(node);
+        }
+        else if (node.type === "SECTION") {
+            out.push(...collectFrames(node.children));
+        }
     }
-    return figma.currentPage.children.filter((node) => node.type === "FRAME");
+    return out;
 }

@@ -157,7 +157,10 @@
 
   <div id="msg"></div>
 
-  <script src="secret.js" onerror="void 0"></script>
+  <!-- SECRET_TOKEN_INLINE: replaced by scripts/build-ui.js with a literal
+       <script>window.SECRET_TOKEN='…'</script> at build time. Relative
+       <script src> can't load inside Figma's plugin sandbox iframe. -->
+  <!--SECRET_TOKEN_INLINE-->
   <script>
     const PORT  = 31773;
     const BASE  = 'http://localhost:' + PORT; // must match manifest devAllowedDomains
@@ -350,10 +353,14 @@
         return;
       }
       if (m.type === 'done') {
-        const queue = m.exports.map((item) => ({
-          name: (item.name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim() || 'frame'),
-          bytes: item.bytes,
-        }));
+        // Disambiguate duplicate names (macOS-Finder style: "Frame", "Frame 2", "Frame 3")
+        // so frames sharing a name don't overwrite each other on the Desktop.
+        const seen = Object.create(null);
+        const queue = m.exports.map((item) => {
+          const clean = (item.name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ').trim() || 'frame');
+          const n = (seen[clean] = (seen[clean] || 0) + 1);
+          return { name: n === 1 ? clean : clean + ' ' + n, bytes: item.bytes };
+        });
 
         if (queue.length === 0) {
           setMsg('No frames exported.', 'error');

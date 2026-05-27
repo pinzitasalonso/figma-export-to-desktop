@@ -1,2 +1,4 @@
 node_modules/
 secret.js
+# Built by scripts/build-ui.js — inlines the token from secret.js.
+ui.html
