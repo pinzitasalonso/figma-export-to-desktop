@@ -23,24 +23,19 @@ git clone https://github.com/pinzitasalonso/figma-export-to-desktop.git
 cd figma-export-to-desktop
 npm install
 
-# 2. (Optional but recommended) Set a private auth token.
-#    Generate a random value and put the SAME one in both places.
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-cp secret.example.js secret.js   # paste the token into window.SECRET_TOKEN
-#    Also add it as FIGMA_EXPORT_TOKEN in helper/install.sh's plist block.
-#    Skip this whole step to use the public default (fine for a single trusted user).
-
-# 3. Build the plugin (compiles code.ts, inlines the token into ui.html)
+# 2. Build the plugin
 npm run build
 
-# 4. Auto-start the helper at login
+# 3. Auto-start the helper at login
 cd helper && ./install.sh && cd ..
 
-# 5. Verify the helper is running
+# 4. Verify the helper is running
 curl -s http://localhost:31773/health   # expect {"ok":true,...}
 ```
 
 Then in the **Figma desktop app**: **Plugins → Development → Import plugin from manifest…** and select `manifest.json` from this repo.
+
+Want to lock the helper down so only your plugin can call it? See [Optional: private auth token](#optional-private-auth-token) below.
 
 ## Use
 
@@ -51,6 +46,41 @@ Then in the **Figma desktop app**: **Plugins → Development → Import plugin f
 Files land on `~/Desktop` named `<layer>.png` at 2× scale. Duplicate names get ` 2`, ` 3`, … appended (Finder-style).
 
 **Windows/Linux**: everything works except `helper/install.sh` (macOS launchd). Run `node helper/server.js` manually, or wire up a systemd user service / Task Scheduler entry.
+
+---
+
+## Optional: private auth token
+
+Out of the box the helper accepts a public token shipped in the repo. That's fine for a single-user personal machine — the helper is loopback-only and only writes `*.png` files to `~/Desktop` with a 50 MB cap, so the worst a misbehaving caller could do is clutter your Desktop. Set a private token if you'd rather a random localhost-probing browser tab couldn't even do that.
+
+```bash
+# 1. Generate a random value
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# 2. Plugin side — paste it into a gitignored secret.js, then rebuild
+cp secret.example.js secret.js   # edit window.SECRET_TOKEN to your value
+npm run build                    # inlines it into ui.html
+```
+
+**3. Helper side** — set `FIGMA_EXPORT_TOKEN` to the same value.
+
+- *If you haven't run `helper/install.sh` yet*: add a `FIGMA_EXPORT_TOKEN` entry to the plist block inside `install.sh` first, then run it.
+- *If the launchd agent is already installed*: edit the live plist at `~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist`, add the entry to its `EnvironmentVariables` dict, then reload:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
+launchctl load   ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
+```
+
+**4. Re-open the plugin in Figma** (or click "Retry connection"). Verify the old default token is now rejected:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" \
+  -H "X-Auth-Token: figma-export-local-dev" \
+  -X POST http://127.0.0.1:31773/save     # expect 401
+```
+
+Re-run `npm run build` whenever you change the token, so the new value gets inlined into `ui.html`.
 
 ---
 
@@ -104,22 +134,7 @@ A localhost server that writes files deserves care, so the helper:
 - requires a shared **token** (`X-Auth-Token`);
 - writes **only** inside `~/Desktop`, **only** `*.png`, with filename sanitisation, a path-traversal guard, and a 50 MB-per-file cap.
 
-The default token (`figma-export-local-dev`) shipped in the repo is a placeholder, **not a secret**. For real protection set a private one (Setup step 2): the helper reads `FIGMA_EXPORT_TOKEN` from the environment, the plugin UI reads it from a gitignored `secret.js` that the build inlines into `ui.html`. Both must match.
-
-**Changing the token later?** Edit `secret.js` *and* the helper's `FIGMA_EXPORT_TOKEN`, run `npm run build`, then reload the launchd agent:
-
-```bash
-launchctl unload ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
-launchctl load   ~/Library/LaunchAgents/com.figma-export-to-desktop.helper.plist
-```
-
-Verify the old token is rejected:
-
-```bash
-curl -sS -o /dev/null -w "%{http_code}\n" \
-  -H "X-Auth-Token: figma-export-local-dev" \
-  -X POST http://127.0.0.1:31773/save     # expect 401
-```
+The default token (`figma-export-local-dev`) shipped in the repo is a placeholder, **not a secret**. The helper reads `FIGMA_EXPORT_TOKEN` from the environment; the plugin UI reads it from a gitignored `secret.js` that the build inlines into `ui.html`. Both must match. See [Optional: private auth token](#optional-private-auth-token) for the full setup.
 
 #### Why a `secret.js` and not a `.env` file?
 
